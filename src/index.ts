@@ -1,7 +1,7 @@
-import { Hono } from 'hono/';
+import { Hono } from 'hono';
 
 type Bindings = {
-	MY_BUCKET: R2Bucket;
+	MP3_FILES: R2Bucket;
 	USERNAME: string;
 	PASSWORD: string;
 };
@@ -31,7 +31,7 @@ app.post('/upload', async (c) => {
 	const fileName = file.name || `upload-${Date.now()}.mp3`;
 
 	// Save to R2
-	await c.env.MY_BUCKET.put(fileName, file.stream(), {
+	await c.env.MP3_FILES.put(fileName, file.stream(), {
 		httpMetadata: {
 			contentType: file.type,
 		},

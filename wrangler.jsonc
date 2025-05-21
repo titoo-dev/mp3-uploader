@@ -17,7 +17,7 @@
   // ],
   "r2_buckets": [
     {
-      "binding": "MY_BUCKET",
+      "binding": "MP3_FILES",
       "bucket_name": "mp3-files",
       "preview_bucket_name": "mp3-files"
     }
