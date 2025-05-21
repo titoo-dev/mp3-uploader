@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
+import { R2Bucket } from '@cloudflare/workers-types';
 
 type Bindings = {
 	MP3_FILES: R2Bucket;
-	USERNAME: string;
-	PASSWORD: string;
 };
 
 const app = new Hono<{
