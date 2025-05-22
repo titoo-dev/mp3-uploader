@@ -244,7 +244,7 @@ app.get("/audio/:id/meta", async (c) => {
 });
 
 /**
- * Stream an audio file
+ * Stream an audio file with range request support
  * @route GET /audio/:id
  * @param {string} request.params.id - The ID of the audio file
  * @returns {Stream} Audio file stream with appropriate content-type
@@ -255,10 +255,56 @@ app.get("/audio/:id", async (c) => {
   const object = await c.env.AUDIO_FILES.get(`${id}.mp3`);
   if (!object) return c.text("File not found", 404);
 
-  return c.body(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType || "audio/mpeg",
-    },
+  const rangeHeader = c.req.header("range");
+  const contentType = object.httpMetadata?.contentType || "audio/mpeg";
+  const size = object.size;
+
+  // Set default headers
+  const headers: { [key: string]: string } = {
+    "Content-Type": contentType,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "public, max-age=3600",
+  };
+
+  // If no range is requested, return the entire file
+  if (!rangeHeader) {
+    headers["Content-Length"] = size.toString();
+    return c.body(object.body, { headers });
+  }
+
+  // Parse the range header
+  const rangeParts = rangeHeader.replace(/bytes=/, "").split("-");
+  const start = parseInt(rangeParts[0], 10);
+  const end = rangeParts[1] ? parseInt(rangeParts[1], 10) : size - 1;
+  
+  // Check if the range is valid
+  if (isNaN(start) || isNaN(end) || start >= size || end >= size) {
+    // Return 416 Range Not Satisfiable if range is invalid
+    headers["Content-Range"] = `bytes */${size}`;
+    return c.body(null, { 
+      status: 416, // Range Not Satisfiable
+      headers 
+    });
+  }
+
+  // Calculate the chunk size
+  const chunkSize = end - start + 1;
+  
+  // Get the requested range from R2
+  const rangeObject = await c.env.AUDIO_FILES.get(`${id}.mp3`, {
+    range: { offset: start, length: chunkSize },
+  });
+  
+  if (!rangeObject) return c.text("Range not available", 416);
+
+  // Set additional headers for partial content
+  headers["Content-Length"] = chunkSize.toString();
+  headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+  
+  // Return 206 Partial Content for range requests
+  return c.body(rangeObject.body, { 
+    status: 206, // Partial Content
+    headers 
   });
 });
 
