@@ -316,4 +316,41 @@ app.delete("/audio/:id", async (c) => {
   return c.json({ message: "Deleted", id });
 });
 
+/**
+ * Get cover art for an audio file
+ * @route GET /audio/:id/cover
+ * @param {string} request.params.id - The ID of the audio file
+ * @returns {Stream} Cover art image stream with appropriate content-type
+ * @throws {404} If cover art is not found
+ */
+app.get("/audio/:id/cover", async (c) => {
+  const id = c.req.param("id");
+  
+  // Get audio metadata to check if it has cover art
+  const raw = await c.env.AUDIO_KV.get(`audio:${id}`);
+  if (!raw) return c.text("Audio file not found", 404);
+  
+  const meta = JSON.parse(raw) as MP3Meta;
+  
+  // Check if this audio file has cover art
+  if (!meta.coverArt || !meta.coverArt.id) {
+    return c.text("No cover art available for this audio", 404);
+  }
+  
+  // Construct the cover art key based on the format
+  const coverArtFormat = meta.coverArt.format.split("/")[1] || "jpg";
+  const coverKey = `${meta.coverArt.id}.${coverArtFormat}`;
+  
+  // Get the cover art from R2
+  const coverObject = await c.env.COVER_FILES.get(coverKey);
+  if (!coverObject) return c.text("Cover art file not found", 404);
+  
+  // Return the cover art with proper content type
+  return c.body(coverObject.body, {
+    headers: {
+      "Content-Type": meta.coverArt.format || "image/jpeg",
+    },
+  });
+});
+
 export default app;
