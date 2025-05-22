@@ -6,6 +6,7 @@ import {
 } from "@cloudflare/workers-types";
 import { v4 as uuidv4 } from "uuid";
 import * as mm from "music-metadata";
+import { cors } from 'hono/cors'
 
 type Bindings = {
   AUDIO_FILES: R2Bucket;
@@ -37,6 +38,8 @@ type MP3Meta = {
     size: number;
   };
 };
+
+app.use('*', cors())
 
 /**
  * Upload a new MP3 audio file
