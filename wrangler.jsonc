@@ -20,7 +20,12 @@
       "binding": "AUDIO_FILES",
       "bucket_name": "audio-files",
       "preview_bucket_name": "audio-files"
-    }
+    },
+    {
+      "binding": "COVER_FILES",
+      "bucket_name": "cover-files",
+      "preview_bucket_name": "cover-files"
+    },
   ],
   // "d1_databases": [
   //   {
