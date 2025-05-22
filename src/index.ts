@@ -6,7 +6,8 @@ import {
 } from "@cloudflare/workers-types";
 import { v4 as uuidv4 } from "uuid";
 import * as mm from "music-metadata";
-import { cors } from 'hono/cors'
+import { cors } from 'hono/cors';
+import cryptojs from 'crypto-js';
 
 type Bindings = {
   AUDIO_FILES: R2Bucket;
@@ -24,6 +25,7 @@ type MP3Meta = {
   contentType: string;
   size: number;
   createdAt: string;
+  fileHash: string; // Add hash field to identify duplicates
   metadata?: {
     title?: string;
     artist?: string;
@@ -66,13 +68,32 @@ app.post("/audio", async (c) => {
     return c.text("Invalid file type", 400);
   }
 
-  const id = uuidv4();
-  const key = `${id}.mp3`;
-
   // We need to clone the file for metadata extraction since we'll consume the stream later
   const fileBuffer = await file.arrayBuffer();
   // Convert ArrayBuffer to Uint8Array for music-metadata parsing
   const uint8Array = new Uint8Array(fileBuffer);
+  
+  // Generate a hash of the file content
+  const fileHash = await generateFileHash(uint8Array);
+  
+  // Check if a file with the same hash already exists
+  const existingFile = await findFileByHash(c.env.AUDIO_KV, fileHash);
+  
+  if (existingFile) {
+    // Return information about the existing file instead of creating a duplicate
+    return c.json({
+      message: "File already exists",
+      duplicate: true,
+      existingFile: {
+        id: existingFile.id,
+        filename: existingFile.filename,
+        metadata: existingFile.metadata
+      }
+    }, 400);
+  }
+
+  const id = uuidv4();
+  const key = `${id}.mp3`;
 
   // Extract metadata using music-metadata
   let metadata;
@@ -121,6 +142,7 @@ app.post("/audio", async (c) => {
     filename: file.name,
     contentType: file.type,
     size: file.size,
+    fileHash: fileHash, // Store the hash for future duplicate checks
     createdAt: new Date().toISOString(),
     metadata: metadata
       ? {
@@ -139,6 +161,46 @@ app.post("/audio", async (c) => {
 
   return c.json({ message: "Uploaded", id });
 });
+
+/**
+ * Generate a SHA-256 hash from file content
+ * @param {Uint8Array} fileContent - The file content to hash
+ * @returns {Promise<string>} - Hex string of the hash
+ */
+async function generateFileHash(fileContent: Uint8Array): Promise<string> {
+  // Convert Uint8Array to WordArray that CryptoJS can use
+  const wordArray = cryptojs.lib.WordArray.create(fileContent);
+  
+  // Generate SHA-256 hash using CryptoJS
+  const hash = cryptojs.SHA256(wordArray);
+  
+  // Return the hash as a hex string
+  return hash.toString(cryptojs.enc.Hex);
+}
+
+/**
+ * Find a file with the given hash in the KV store
+ * @param {KVNamespace} kv - The KV namespace to search
+ * @param {string} hash - File hash to search for
+ * @returns {Promise<MP3Meta|null>} - Returns file metadata if found, null otherwise
+ */
+async function findFileByHash(kv: KVNamespace, hash: string): Promise<MP3Meta|null> {
+  // List all audio files
+  const { keys } = await kv.list({ prefix: "audio:" });
+  
+  // Check each file for matching hash
+  for (const key of keys) {
+    const raw = await kv.get(key.name);
+    if (!raw) continue;
+    
+    const meta = JSON.parse(raw) as MP3Meta;
+    if (meta.fileHash === hash) {
+      return meta;
+    }
+  }
+  
+  return null;
+}
 
 /**
  * Get a list of all uploaded audio files

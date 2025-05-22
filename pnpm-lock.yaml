@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      crypto-js:
+        specifier: ^4.2.0
+        version: 4.2.0
       hono:
         specifier: ^4.7.10
         version: 4.7.10
@@ -21,6 +24,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20250521.0
         version: 4.20250521.0
+      '@types/crypto-js':
+        specifier: ^4.2.2
+        version: 4.2.2
       wrangler:
         specifier: ^4.4.0
         version: 4.16.0(@cloudflare/workers-types@4.20250521.0)
@@ -356,6 +362,9 @@ packages:
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
 
+  '@types/crypto-js@4.2.2':
+    resolution: {integrity: sha512-sDOLlVbHhXpAUAL0YHDUUwDZf3iN4Bwi4W6a0W0b+QcAezUbRtH4FVb+9J4h+XFPW7l/gQ9F8qC7P+Ec4k8QVQ==}
+
   acorn-walk@8.3.2:
     resolution: {integrity: sha512-cjkyv4OtNCIeqhHrfS81QWXoCBPExR/J62oyEqepVw8WaQeSqpW2uhuLPh1m9eWhDuOo/jUXVTlifvesOWp/4A==}
     engines: {node: '>=0.4.0'}
@@ -392,6 +401,9 @@ packages:
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
+
+  crypto-js@4.2.0:
+    resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
 
   data-uri-to-buffer@2.0.2:
     resolution: {integrity: sha512-ND9qDTLc6diwj+Xe5cdAgVTbLVdXbtxTJRXRhli8Mowuaan+0EJOtdqJ0QCHNSSPyoXGx9HX2/VMnKeC34AChA==}
@@ -787,6 +799,8 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
+  '@types/crypto-js@4.2.2': {}
+
   acorn-walk@8.3.2: {}
 
   acorn@8.14.0: {}
@@ -816,6 +830,8 @@ snapshots:
   content-type@1.0.5: {}
 
   cookie@0.7.2: {}
+
+  crypto-js@4.2.0: {}
 
   data-uri-to-buffer@2.0.2: {}
 
