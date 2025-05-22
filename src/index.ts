@@ -68,13 +68,15 @@ app.post("/audio", async (c) => {
 
   // We need to clone the file for metadata extraction since we'll consume the stream later
   const fileBuffer = await file.arrayBuffer();
+  // Convert ArrayBuffer to Uint8Array for music-metadata parsing
+  const uint8Array = new Uint8Array(fileBuffer);
 
   // Extract metadata using music-metadata
   let metadata;
   let coverArtInfo;
 
   try {
-    metadata = await mm.parseBuffer(fileBuffer, { mimeType: file.type });
+    metadata = await mm.parseBuffer(uint8Array, { mimeType: file.type });
 
     // Check if there's cover art in the file
     if (metadata.common.picture && metadata.common.picture.length > 0) {
@@ -99,7 +101,7 @@ app.post("/audio", async (c) => {
     }
   } catch (error) {
     return c.text(
-      `Error extracting metadata: ${error}`,
+      `Error extracting metadata: ${error instanceof Error ? error.message : String(error)}`,
       500
     );
   }
