@@ -9,17 +9,17 @@
   // "vars": {
   //   "MY_VAR": "my-variable"
   // },
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "MY_KV_NAMESPACE",
-  //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  //   }
-  // ],
+  "kv_namespaces": [
+    {
+      "binding": "AUDIO_KV",
+      "id": "eee11ecb8e0547f584f56a1716cae4a3",
+    }
+  ],
   "r2_buckets": [
     {
-      "binding": "MP3_FILES",
-      "bucket_name": "mp3-files",
-      "preview_bucket_name": "mp3-files"
+      "binding": "AUDIO_FILES",
+      "bucket_name": "audio-files",
+      "preview_bucket_name": "audio-files"
     }
   ],
   // "d1_databases": [

@@ -1,42 +1,184 @@
-import { Hono } from 'hono';
-import { R2Bucket } from '@cloudflare/workers-types';
+import { Hono } from "hono";
+import { File, KVNamespace, R2Bucket } from "@cloudflare/workers-types";
+import { v4 as uuidv4 } from "uuid";
 
 type Bindings = {
-	MP3_FILES: R2Bucket;
+  AUDIO_FILES: R2Bucket;
+  AUDIO_KV: KVNamespace;
 };
 
 const app = new Hono<{
-	Bindings: Bindings;
+  Bindings: Bindings;
 }>();
 
-app.post('/upload', async (c) => {
-	const contentType = c.req.header('content-type') || '';
+type MP3Meta = {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+};
 
-	if (!contentType.includes('multipart/form-data')) {
-		return c.text('Expected multipart/form-data', 400);
-	}
+/**
+ * Upload a new MP3 audio file
+ * @route POST /audio
+ * @param {FormData} request.body.audio - The MP3 file to upload
+ * @returns {Object} JSON response with upload ID
+ * @throws {400} If no file is provided or file type is invalid
+ */
+app.post("/audio", async (c) => {
+  const contentType = c.req.header("content-type") || "";
 
-	const formData = await c.req.formData();
-	const file = formData.get('file');
+  if (!contentType.includes("multipart/form-data")) {
+    return c.text("Expected multipart/form-data", 400);
+  }
 
-	if (!file || typeof file === 'string') {
-		return c.text('No file uploaded', 400);
-	}
+  const formData = await c.req.formData();
+  const file = formData.get("audio");
 
-	if (file.type !== 'audio/mpeg' && file.type !== 'audio/mp3') {
-		return c.text('Invalid file type', 400);
-	}
+  if (!file || typeof file === "string") {
+    return c.text("No Audio uploaded", 400);
+  }
 
-	const fileName = file.name || `upload-${Date.now()}.mp3`;
+  if (file.type !== "audio/mpeg" && file.type !== "audio/mp3") {
+    return c.text("Invalid file type", 400);
+  }
 
-	// Save to R2
-	await c.env.MP3_FILES.put(fileName, file.stream(), {
-		httpMetadata: {
-			contentType: file.type,
-		},
-	});
+  const id = uuidv4();
+  const key = `${id}.mp3`;
 
-	return c.text(`File ${fileName} uploaded successfully to R2`);
+  // Save to R2
+  await c.env.AUDIO_FILES.put(key, file.stream(), {
+    httpMetadata: {
+      contentType: file.type,
+    },
+  });
+
+  const meta: MP3Meta = {
+    id,
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+    createdAt: new Date().toISOString(),
+  };
+
+  await c.env.AUDIO_KV.put(`audio:${id}`, JSON.stringify(meta));
+
+  return c.json({ message: "Uploaded", id });
 });
+
+/**
+ * Get a list of all uploaded audio files
+ * @route GET /audios
+ * @returns {Object} JSON response with array of audio metadata
+ */
+app.get('/audios', async (c) => {
+  const { keys } = await c.env.AUDIO_KV.list({ prefix: 'audio:' });
+  
+  if (keys.length === 0) {
+    return c.json({ audios: [] });
+  }
+
+  const audioMetas = await Promise.all(
+    keys.map(async ({ name }) => {
+      const raw = await c.env.AUDIO_KV.get(name);
+      if (!raw) return null;
+      return JSON.parse(raw) as MP3Meta;
+    })
+  );
+
+  // Filter out any null values (in case a KV read failed)
+  const validAudios = audioMetas.filter(meta => meta !== null);
+  
+  return c.json({ audios: validAudios });
+});
+
+/**
+ * Get metadata for a specific audio file
+ * @route GET /audio/:id/meta
+ * @param {string} request.params.id - The ID of the audio file
+ * @returns {Object} JSON response with audio metadata
+ * @throws {404} If audio with given ID is not found
+ */
+app.get('/audio/:id/meta', async (c) => {
+  const id = c.req.param('id')
+  const raw = await c.env.AUDIO_KV.get(`audio:${id}`)
+  if (!raw) return c.text('Not found', 404)
+
+  return c.json(JSON.parse(raw))
+})
+
+/**
+ * Stream an audio file
+ * @route GET /audio/:id
+ * @param {string} request.params.id - The ID of the audio file
+ * @returns {Stream} Audio file stream with appropriate content-type
+ * @throws {404} If audio file is not found
+ */
+app.get('/audio/:id', async (c) => {
+  const id = c.req.param('id')
+  const object = await c.env.AUDIO_FILES.get(`${id}.mp3`)
+  if (!object) return c.text('File not found', 404)
+
+  return c.body(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'audio/mpeg',
+    },
+  })
+})
+
+/**
+ * Update an existing audio file
+ * @route PUT /audio/:id
+ * @param {string} request.params.id - The ID of the audio file to update
+ * @param {FormData} request.body.file - The new MP3 file
+ * @returns {Object} JSON response with update confirmation
+ * @throws {404} If audio with given ID is not found
+ * @throws {400} If no file is provided
+ */
+app.put('/audio/:id', async (c) => {
+  const id = c.req.param('id')
+  const existing = await c.env.AUDIO_FILES.get(`audio:${id}`)
+  if (!existing) return c.text('Not found', 404)
+
+  const formData = await c.req.formData()
+  const file = formData.get('file') as File
+  if (!file) return c.text('No file provided', 400)
+
+  await c.env.AUDIO_FILES.put(`${id}.mp3`, file.stream(), {
+    httpMetadata: { contentType: file.type },
+  })
+
+  const existingMetaRaw = await existing.text()
+
+  const meta: MP3Meta = {
+    ...(JSON.parse(existingMetaRaw) as MP3Meta),
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+    createdAt: new Date().toISOString(), // or keep original
+  }
+
+  await c.env.AUDIO_FILES.put(`audio:${id}`, JSON.stringify(meta))
+
+  return c.json({ message: 'Updated', id })
+})
+
+/**
+ * Delete an audio file
+ * @route DELETE /audio/:id
+ * @param {string} request.params.id - The ID of the audio file to delete
+ * @returns {Object} JSON response with deletion confirmation
+ */
+app.delete('/audio/:id', async (c) => {
+  const id = c.req.param('id')
+
+  await Promise.all([
+    c.env.AUDIO_FILES.delete(`${id}.mp3`),
+    c.env.AUDIO_KV.delete(`audio:${id}`),
+  ])
+
+  return c.json({ message: 'Deleted', id })
+})
 
 export default app;
