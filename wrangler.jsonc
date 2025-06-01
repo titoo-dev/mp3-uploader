@@ -13,6 +13,10 @@
     {
       "binding": "AUDIO_KV",
       "id": "eee11ecb8e0547f584f56a1716cae4a3",
+    },
+    {
+      "binding": "PROJECT_KV",
+      "id": "2e5c94a3bd8343538ec316db723a41f7"
     }
   ],
   "r2_buckets": [
