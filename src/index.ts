@@ -27,7 +27,7 @@ type Project = {
 	assetIds?: string[];
 };
 
-type MP3Meta = {
+type Audio = {
 	id: string;
 	filename: string;
 	contentType: string;
@@ -155,7 +155,7 @@ app.post('/audio', async (c) => {
 		},
 	});
 
-	const meta: MP3Meta = {
+	const meta: Audio = {
 		id: audioId,
 		filename: file.name,
 		contentType: file.type,
@@ -216,12 +216,12 @@ async function generateFileHash(fileContent: Uint8Array): Promise<string> {
  * Find a file with the given hash in the KV store
  * @param {KVNamespace} kv - The KV namespace to search
  * @param {string} hash - File hash to search for
- * @returns {Promise<MP3Meta|null>} - Returns file metadata if found, null otherwise
+ * @returns {Promise<Audio|null>} - Returns file metadata if found, null otherwise
  */
 async function findFileByHash(
 	kv: KVNamespace,
 	hash: string
-): Promise<MP3Meta | null> {
+): Promise<Audio | null> {
 	// List all audio files
 	const { keys } = await kv.list({ prefix: 'audio:' });
 
@@ -230,7 +230,7 @@ async function findFileByHash(
 		const raw = await kv.get(key.name);
 		if (!raw) continue;
 
-		const meta = JSON.parse(raw) as MP3Meta;
+		const meta = JSON.parse(raw) as Audio;
 		if (meta.fileHash === hash) {
 			return meta;
 		}
@@ -255,7 +255,7 @@ app.get('/audios', async (c) => {
 		keys.map(async ({ name }) => {
 			const raw = await c.env.AUDIO_KV.get(name);
 			if (!raw) return null;
-			return JSON.parse(raw) as MP3Meta;
+			return JSON.parse(raw) as Audio;
 		})
 	);
 
@@ -369,8 +369,8 @@ app.put('/audio/:id', async (c) => {
 
 	const existingMetaRaw = await existing.text();
 
-	const meta: MP3Meta = {
-		...(JSON.parse(existingMetaRaw) as MP3Meta),
+	const meta: Audio = {
+		...(JSON.parse(existingMetaRaw) as Audio),
 		filename: file.name,
 		contentType: file.type,
 		size: file.size,
@@ -413,7 +413,7 @@ app.get('/audio/:id/cover', async (c) => {
 	const raw = await c.env.AUDIO_KV.get(`audio:${id}`);
 	if (!raw) return c.text('Audio file not found', 404);
 
-	const meta = JSON.parse(raw) as MP3Meta;
+	const meta = JSON.parse(raw) as Audio;
 
 	// Check if this audio file has cover art
 	if (!meta.coverArt || !meta.coverArt.id) {
