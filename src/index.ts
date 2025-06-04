@@ -193,7 +193,7 @@ app.post('/audio', async (c) => {
 
 	await saveProject(c.env.PROJECT_KV, project);
 
-	return c.json({ message: 'Uploaded', id: audioId });
+	return c.json({ message: 'Uploaded', id: audioId, projectId: projectId });
 });
 
 /**
