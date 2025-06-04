@@ -155,15 +155,6 @@ app.post("/audio", async (c) => {
     },
   });
 
-  const audioMetadata = metadata ? {
-          title: metadata.common.title,
-          artist: metadata.common.artist,
-          album: metadata.common.album,
-          year: metadata.common.year?.toString(),
-          genre: metadata.common.genre,
-          duration: metadata.format.duration,
-        } : { id: audioId };
-
   const meta: Audio = {
     id: audioId,
     filename: file.name,
@@ -171,7 +162,14 @@ app.post("/audio", async (c) => {
     size: file.size,
     fileHash: fileHash, // Store the hash for future duplicate checks
     createdAt: new Date().toISOString(),
-    metadata: audioMetadata,
+    metadata: metadata ? {
+          title: metadata.common.title,
+          artist: metadata.common.artist,
+          album: metadata.common.album,
+          year: metadata.common.year?.toString(),
+          genre: metadata.common.genre,
+          duration: metadata.format.duration,
+        } : undefined,
     coverArt: coverArtInfo,
   };
 
@@ -196,7 +194,7 @@ app.post("/audio", async (c) => {
   return c.json({
     message: "Uploaded",
     projectId: projectId,
-    audioMetadata: audioMetadata,
+    audioMetadata: meta,
   });
 });
 
