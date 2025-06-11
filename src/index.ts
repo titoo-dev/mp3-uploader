@@ -1,60 +1,17 @@
 import { Hono } from "hono";
-import { File, KVNamespace, R2Bucket } from "@cloudflare/workers-types";
+import { File, KVNamespace } from "@cloudflare/workers-types";
 import { v4 as uuidv4 } from "uuid";
 import * as mm from "music-metadata";
 import { cors } from "hono/cors";
-import cryptojs from "crypto-js";
-
-type Bindings = {
-  AUDIO_FILES: R2Bucket;
-  AUDIO_KV: KVNamespace;
-  COVER_FILES: R2Bucket;
-  PROJECT_KV: KVNamespace;
-};
+import { Audio, Bindings, Lyrics, Project } from "./types";
+import { findFileByHash, generateFileHash, saveProject } from "./utils";
 
 const app = new Hono<{
   Bindings: Bindings;
 }>();
 
-type Project = {
-  id: string;
-  name: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-  lyricsId?: string;
-  audioId: string;
-  assetIds?: string[];
-};
-
-type Audio = {
-  id: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  createdAt: string;
-  fileHash: string; // Add hash field to identify duplicates
-  metadata?: {
-    title?: string;
-    artist?: string;
-    album?: string;
-    year?: string;
-    genre?: string[];
-    duration?: number;
-  };
-  coverArt?: {
-    id: string;
-    format: string;
-    size: number;
-  };
-};
-
 app.use("*", cors());
 
-async function saveProject(env: KVNamespace, project: Project) {
-  project.updatedAt = new Date().toISOString();
-  await env.put(`project:${project.id}`, JSON.stringify(project));
-}
 
 /**
  * Upload a new MP3 audio file
@@ -198,48 +155,6 @@ app.post("/audio", async (c) => {
   });
 });
 
-/**
- * Generate a SHA-256 hash from file content
- * @param {Uint8Array} fileContent - The file content to hash
- * @returns {Promise<string>} - Hex string of the hash
- */
-async function generateFileHash(fileContent: Uint8Array): Promise<string> {
-  // Convert Uint8Array to WordArray that CryptoJS can use
-  const wordArray = cryptojs.lib.WordArray.create(fileContent);
-
-  // Generate SHA-256 hash using CryptoJS
-  const hash = cryptojs.SHA256(wordArray);
-
-  // Return the hash as a hex string
-  return hash.toString(cryptojs.enc.Hex);
-}
-
-/**
- * Find a file with the given hash in the KV store
- * @param {KVNamespace} kv - The KV namespace to search
- * @param {string} hash - File hash to search for
- * @returns {Promise<Audio|null>} - Returns file metadata if found, null otherwise
- */
-async function findFileByHash(
-  kv: KVNamespace,
-  hash: string
-): Promise<Audio | null> {
-  // List all audio files
-  const { keys } = await kv.list({ prefix: "audio:" });
-
-  // Check each file for matching hash
-  for (const key of keys) {
-    const raw = await kv.get(key.name);
-    if (!raw) continue;
-
-    const meta = JSON.parse(raw) as Audio;
-    if (meta.fileHash === hash) {
-      return meta;
-    }
-  }
-
-  return null;
-}
 
 /**
  * Get a list of all uploaded audio files
@@ -347,6 +262,118 @@ app.get("/audio/:id", async (c) => {
   });
 });
 
+
+/**
+ * Get cover art for an audio file
+ * @route GET /audio/:id/cover
+ * @param {string} request.params.id - The ID of the audio file
+ * @returns {Stream} Cover art image stream with appropriate content-type
+ * @throws {404} If cover art is not found
+ */
+app.get("/audio/:id/cover", async (c) => {
+  const id = c.req.param("id");
+
+  // Get audio metadata to check if it has cover art
+  const raw = await c.env.AUDIO_KV.get(`audio:${id}`);
+  if (!raw) return c.text("Audio file not found", 404);
+
+  const meta = JSON.parse(raw) as Audio;
+
+  // Check if this audio file has cover art
+  if (!meta.coverArt || !meta.coverArt.id) {
+    return c.text("No cover art available for this audio", 404);
+  }
+
+  // Construct the cover art key based on the format
+  const coverArtFormat = meta.coverArt.format.split("/")[1] || "jpg";
+  const coverKey = `${meta.coverArt.id}.${coverArtFormat}`;
+
+  // Get the cover art from R2
+  const coverObject = await c.env.COVER_FILES.get(coverKey);
+  if (!coverObject) return c.text("Cover art file not found", 404);
+
+  // Return the cover art with proper content type
+  return c.body(coverObject.body, {
+    headers: {
+      "Content-Type": meta.coverArt.format || "image/jpeg",
+    },
+  });
+});
+
+app.get('/projects', async (c) => {
+  const keys = await c.env.PROJECT_KV.list({ prefix: 'project:' });
+
+  if (!keys.keys.length) return c.json({ projects: [] });
+
+  const projects = await Promise.all(
+    keys.keys.map(async (key) => {
+      const raw = await c.env.PROJECT_KV.get(key.name);
+      return raw ? JSON.parse(raw) : null;
+    })
+  );
+
+  return c.json(projects.filter((p) => p !== null));
+});
+
+app.get('/project/:id', async (c) => {
+  const id = c.req.param('id');
+  const raw = await c.env.PROJECT_KV.get(`project:${id}`);
+  if (!raw) return c.text('Project not found', 404);
+  return c.json(JSON.parse(raw));
+});
+
+app.post('/project', async (c) => {
+	const { name, audioId } = await c.req.json();
+
+	const id = uuidv4();
+	const now = new Date().toISOString();
+	const project: Project = {
+		id,
+		name,
+		createdAt: now,
+		updatedAt: now,
+		audioId,
+	};
+
+	await saveProject(c.env.PROJECT_KV, project);
+
+	return c.json({ message: 'Project created', id });
+});
+
+app.put('/project/:id', async (c) => {
+	const id = c.req.param('id');
+	const raw = await c.env.PROJECT_KV.get(`project:${id}`);
+	if (!raw) return c.text('Project not found', 404);
+
+	const project = JSON.parse(raw);
+	const updates = await c.req.json();
+
+	// Handle lyrics if provided
+	if (updates.lyrics) {
+		const lyricsId = uuidv4();
+		const now = new Date().toISOString();
+		const lyrics: Lyrics = {
+			id: lyricsId,
+			createdAt: now,
+			updatedAt: now,
+			text: updates.lyrics.text || '',
+			projectId: id,
+			lines: updates.lyrics.lines || [],
+		};
+
+		await c.env.LYRICS_KV.put(`lyrics:${lyricsId}`, JSON.stringify(lyrics));
+
+		// Remove lyrics from updates to avoid storing in project
+		delete updates.lyrics;
+	}
+
+	// Apply other changes
+	Object.assign(project, updates);
+	await saveProject(c.env.PROJECT_KV, project);
+
+	return c.json({ message: 'Project updated', project });
+});
+
 /**
  * Update an existing audio file
  * @route PUT /audio/:id
@@ -384,6 +411,33 @@ app.put("/audio/:id", async (c) => {
   return c.json({ message: "Updated", id });
 });
 
+app.delete('/project/:id', async (c) => {
+	const id = c.req.param('id');
+	const rawProject = await c.env.PROJECT_KV.get(`project:${id}`);
+	if (!rawProject) return c.text('Project not found', 404);
+
+	const project = JSON.parse(rawProject);
+
+	const rawAudio = await c.env.AUDIO_KV.get(`audio:${project.audioId}`);
+
+	if (!rawAudio) return c.text('Audio not found', 404);
+
+	const audio = JSON.parse(rawAudio);
+
+	await c.env.PROJECT_KV.delete(`project:${id}`);
+	await c.env.AUDIO_KV.delete(`audio:${audio.id}`);
+
+	await c.env.AUDIO_FILES.delete(`${audio.id}.mp3`);
+
+	const coverKey = `${audio.coverArt.id}.${
+		audio.coverArt.format.split('/')[1] || 'jpg'
+	}`;
+
+	await c.env.COVER_FILES.delete(coverKey);
+
+	return c.json({ message: 'Project deleted', id });
+});
+
 /**
  * Delete an audio file
  * @route DELETE /audio/:id
@@ -399,43 +453,6 @@ app.delete("/audio/:id", async (c) => {
   ]);
 
   return c.json({ message: "Deleted", id });
-});
-
-/**
- * Get cover art for an audio file
- * @route GET /audio/:id/cover
- * @param {string} request.params.id - The ID of the audio file
- * @returns {Stream} Cover art image stream with appropriate content-type
- * @throws {404} If cover art is not found
- */
-app.get("/audio/:id/cover", async (c) => {
-  const id = c.req.param("id");
-
-  // Get audio metadata to check if it has cover art
-  const raw = await c.env.AUDIO_KV.get(`audio:${id}`);
-  if (!raw) return c.text("Audio file not found", 404);
-
-  const meta = JSON.parse(raw) as Audio;
-
-  // Check if this audio file has cover art
-  if (!meta.coverArt || !meta.coverArt.id) {
-    return c.text("No cover art available for this audio", 404);
-  }
-
-  // Construct the cover art key based on the format
-  const coverArtFormat = meta.coverArt.format.split("/")[1] || "jpg";
-  const coverKey = `${meta.coverArt.id}.${coverArtFormat}`;
-
-  // Get the cover art from R2
-  const coverObject = await c.env.COVER_FILES.get(coverKey);
-  if (!coverObject) return c.text("Cover art file not found", 404);
-
-  // Return the cover art with proper content type
-  return c.body(coverObject.body, {
-    headers: {
-      "Content-Type": meta.coverArt.format || "image/jpeg",
-    },
-  });
 });
 
 export default app;

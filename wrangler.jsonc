@@ -17,7 +17,11 @@
     {
       "binding": "PROJECT_KV",
       "id": "2e5c94a3bd8343538ec316db723a41f7"
-    }
+    },
+    {
+      "binding": "LYRICS_KV",
+      "id": "0cee5eb6c4064edd96ac91cc50513f14",
+    },
   ],
   "r2_buckets": [
     {
